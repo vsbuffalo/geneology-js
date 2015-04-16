@@ -51,12 +51,13 @@ var Loci = function(alleles, effects, linkage) {
 
 function isValidLinkage(loci, linkage) {
     // linkage correct length?
-    if (loci.length - 1 != linkage.length)
+    if (linkage == undefined || loci == undefined ||
+	loci.length - 1 != linkage.length)
 	throw new Error("length of 'linkage' must be length of loci - 1 (loci: "
 			+ loci.length + "; linkage: " + linkage.length + ")");
 }
 
-function Individual(mloci, ploci) {
+function Individual(mloci, ploci, id, mid, pid) {
     // Some checks
     if (ploci.length != mloci.length)
 	throw new Error("number of paternal loci different from maternal loci");
@@ -87,7 +88,10 @@ function Individual(mloci, ploci) {
     };
     return {loci: loci,
 	    fitness: fitness,
-	    meiosis: meiosis};
+	    meiosis: meiosis,
+	    id: id,
+	    mid: mid,
+	    pid: pid};
 }
 
 function DemographicEvent(name, gens, size) {
@@ -157,7 +161,7 @@ function Population(nloci, linkage) {
 	for (var i = 0; i < nind; i++) {
 	    mom = sample_sfs(initial_sfs, nloci);
 	    pop = sample_sfs(initial_sfs, nloci);
-	    first_gen.push(Individual(mom, pop));
+	    first_gen.push(Individual(mom, pop, i, null, null));
 	}
 	individuals.push(first_gen);
 	return this;
@@ -175,9 +179,12 @@ function Population(nloci, linkage) {
 	// make the next generation
 	var new_gen = [];
 	for (var i = 0; i < popsize; i++) {
-	    var mom = random_individual().meiosis(linkage);
-	    var pop = random_individual().meiosis(linkage);
-	    new_gen.push(Individual(mom.gamete, pop.gamete));
+	    var mom = random_individual();
+	    var pop = random_individual();
+	    var kid = Individual(mom.meiosis(linkage).gamete,
+				 pop.meiosis(linkage).gamete,
+				 i, mom.id, pop.id);
+	    new_gen.push(kid);
 	}
 	if (new_gen.length > 0)
 	    individuals.push(new_gen);
@@ -197,11 +204,11 @@ function Population(nloci, linkage) {
 
 function Demography() {
     var events = [];
-    function addEvent(size, gens, name) {
+    function popSizeChangeEvent(size, gens, name) {
 	events.push({size: size, gens: gens, name: name});
 	return this;
     }
-    return {events: events, addEvent: addEvent};
+    return {events: events, popSizeChangeEvent: popSizeChangeEvent};
 }
 
 function DiploidWrightFisher(pop, demography) {
@@ -235,9 +242,10 @@ function DiploidWrightFisher(pop, demography) {
     }
 }
 
-pop = Population(100, constantLinkage(100, 0.01))
-pop.init(10)
 
-dem = Demography().addEvent(15, 10)
+
+pop = Population(100, constantLinkage(100, 0.01))
+
+dem = Demography().popSizeChangeEvent(15, 10)
 
 wf = DiploidWrightFisher(pop, dem)
