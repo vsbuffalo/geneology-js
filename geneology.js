@@ -160,6 +160,7 @@ function Population(nloci, linkage) {
 	    first_gen.push(Individual(mom, pop));
 	}
 	individuals.push(first_gen);
+	return this;
     }
     function last_gen() {
 	// return the last generation
@@ -172,18 +173,23 @@ function Population(nloci, linkage) {
     }
     function mate(popsize) {
 	// make the next generation
-	new_gen = [];
+	var new_gen = [];
 	for (var i = 0; i < popsize; i++) {
-	    mom = random_individual().meiosis(linkage);
-	    pop = random_individual().meiosis(linkage);
+	    var mom = random_individual().meiosis(linkage);
+	    var pop = random_individual().meiosis(linkage);
 	    new_gen.push(Individual(mom.gamete, pop.gamete));
 	}
-	individuals.push(new_gen);
-	return new_gen;
+	if (new_gen.length > 0)
+	    individuals.push(new_gen);
+	return this;
     }
+ 
+    function gens() { return individuals.length; };
+
     return {init: init,
 	    random_individual: random_individual,
 	    mate: mate,
+	    gens: gens,
 	    last_gen: last_gen,
 	    individuals: individuals,
 	    initial_sfs: initial_sfs};
@@ -200,22 +206,23 @@ function Demography() {
 
 function DiploidWrightFisher(pop, demography) {
     // Push all populations through demography, each pop is a simulation.
+    dem_events = demography.events;
 
     // total simulation time is sum of all the demographic events.
-    var gens = demography.map(function(x) { return x.gens; });
+    var gens = dem_events.map(function(x) { return x.gens; });
     var period = 0;
 
     // get first population size initialize population
-    var init_nind = demography[0].size;
-    pop.init();
+    var init_nind = dem_events[0].size;
+    pop.init(init_nind);
 
     // Initialize all individuals for starting demography
     for (gen = 0; gen < gens; gen++) {
-	if (demography[period].time >= gen) {
+	if (dem_events[period].time >= gen) {
 	    period++; // increment the demography
 	}
 	// get population size for tihs generation
-	popsize = demography[period].size;
+	popsize = dem_events[period].size;
 	pop.mate(popsize);
 
 	// do other stuff for this generation:
@@ -228,8 +235,9 @@ function DiploidWrightFisher(pop, demography) {
     }
 }
 
-// tests
-a = Population(100, constantLinkage(100, 0.01))
-a.init(30)
+pop = Population(100, constantLinkage(100, 0.01))
+pop.init(10)
 
+dem = Demography().addEvent(15, 10)
 
+wf = DiploidWrightFisher(pop, dem)
