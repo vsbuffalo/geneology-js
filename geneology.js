@@ -1,4 +1,46 @@
 EPS = 0.000001
+// simple sampling distributions
+
+var Dist = (function(unif) {
+    // discrete uniform
+    function dunif(min, max) {
+	return Math.floor(unif() * (max - min)) + min;
+    };
+
+    // Poisson rv
+    function pois(lambda) {
+	var n = 0,
+	    limit = Math.exp(-lambda),
+	    x = unif();
+	while (x > limit) {
+	    n++;
+	    x *= unif();
+	}
+	return n;
+    };
+
+    // Exponential rv
+    function exp(lambda) {
+	return -Math.log(unif())/lambda;
+    };
+
+    function bern(p) {
+	return Number(unif() < p);
+    };
+
+    // binomial rv
+    function binom(n, p) {
+	var x = 0;
+	for (var i = 0; i < n; i++) x += bern(p);
+	return x;
+    };
+    return {dunif: dunif,
+	    pois: pois,
+	    exp: exp,
+	    bern: bern,
+	    binom: binom};
+})(Math.random);
+
 
 var Loci = function(alleles, effects, linkage) {
     if (alleles.length != effects.length);
@@ -7,24 +49,28 @@ var Loci = function(alleles, effects, linkage) {
 	    effects: effects, linkage: linkage};
 }
 
-function Individual(mloci, ploci, linkage) {
+function isValidLinkage(loci, linkage) {
+    // linkage correct length?
+    if (loci.length - 1 != linkage.length)
+	throw new Error("length of 'linkage' must be length of loci - 1 (loci: "
+			+ loci.length + "; linkage: " + linkage.length + ")");
+}
+
+function Individual(mloci, ploci) {
     // Some checks
     if (ploci.length != mloci.length)
 	throw new Error("number of paternal loci different from maternal loci");
-    // linkage correct length?
-    if (ploci.length != linkage.length - 1)
-	throw new Error("length of 'linkage' must be length of loci - 1");
-
     loci = [mloci, ploci]; // maternal and paternal loci
     fitness = function() {};
-    meiosis = function() {
+    meiosis = function(linkage) {
+	isValidLinkage(ploci, linkage);
 	// make a single gamete
 	phase = [];
 	// recombine phases, which are arrays of 0 (mom) and 1 (pop)
 	which_par = Dist.bern();
 	phase.push(which_par);
-	for (var l = 1; l < ploci.length; l++) {
-	    if (Dist.bern(linkage)) {
+	for (var l = 0; l < ploci.length; l++) {
+	    if (Dist.bern(linkage[l])) {
 		// recombine; linkage gives probability of recombination so
 		// drawing a success means cross over.
 		which_par = which_par == 0 ? 1 : 0; // recombine
@@ -83,9 +129,10 @@ function sample(x, n, probs) {
     return out;
 }
 
-function gameticEquilibriumLinkage(nloci) {
+function constantLinkage(nloci, r) {
     // no linkage, assume gamete phase equilibrium
-    return Array.apply(null, new Array(nloci-1)).map(function(x) { return 0.5; })
+    return Array.apply(null, new Array(nloci-1))
+	.map(function(x) { return r; })
 }
 
 function sample_sfs(sfs, nloci) {
@@ -94,41 +141,84 @@ function sample_sfs(sfs, nloci) {
 	map(function(freq) {return Number(Dist.bern(freq));});
 }
  
-function Population(nind, nloci, linkage) {
+function Population(nloci, linkage) {
     // used to store pop state through simulation for later reference
     // Should contain subpopulations/demes
-    var initial_sfs = sfs(nind, nloci); // TODO resolution? multiply nind by 1000?
-    // initialize individuals
     var individuals = [];
     var demes = {}; // TODO
-    for (var i = 0; i < nind; i++) {
-	var mom = sample_sfs(initial_sfs, nloci);
-	var pop = sample_sfs(initial_sfs, nloci);
-	individuals.push(Individual(mom, pop, linkage));
+    var history = [];
+    var initial_sfs;
+    function init(nind) {
+	if (nind == undefined || nind < 2)
+	    throw new Error("nind must be > 2");
+	initial_sfs = sfs(nind, nloci); // TODO resolution? multiply nind by 1000?
+	// initialize individuals
+	var first_gen = [], mom, pop;
+	for (var i = 0; i < nind; i++) {
+	    mom = sample_sfs(initial_sfs, nloci);
+	    pop = sample_sfs(initial_sfs, nloci);
+	    first_gen.push(Individual(mom, pop));
+	}
+	individuals.push(first_gen);
     }
-    return {individuals: individuals,
+    function last_gen() {
+	// return the last generation
+	return individuals[individuals.length-1];
+    }
+    function random_individual() {
+	// sample a random individual from the last generation
+	size = individuals[individuals.length-1].length;
+	return individuals[individuals.length-1][Dist.dunif(0, size-1)];
+    }
+    function mate(popsize) {
+	// make the next generation
+	new_gen = [];
+	for (var i = 0; i < popsize; i++) {
+	    mom = random_individual().meiosis(linkage);
+	    pop = random_individual().meiosis(linkage);
+	    new_gen.push(Individual(mom.gamete, pop.gamete));
+	}
+	individuals.push(new_gen);
+	return new_gen;
+    }
+    return {init: init,
+	    random_individual: random_individual,
+	    mate: mate,
+	    last_gen: last_gen,
+	    individuals: individuals,
 	    initial_sfs: initial_sfs};
 }
 
-function DiploidWrightFisher(demography, linkage) {
-    // loop forward in time, running through the demographic events
+function Demography() {
+    var events = [];
+    function addEvent(size, gens, name) {
+	events.push({size: size, gens: gens, name: name});
+	return this;
+    }
+    return {events: events, addEvent: addEvent};
+}
+
+function DiploidWrightFisher(pop, demography) {
+    // Push all populations through demography, each pop is a simulation.
 
     // total simulation time is sum of all the demographic events.
     var gens = demography.map(function(x) { return x.gens; });
     var period = 0;
 
-    // Initialize all individuals for starting demography
-    pop = [];
-    for (var i = 0; i < demography[0].size; i++) {
-	pop.push(Individual());
-    }
+    // get first population size initialize population
+    var init_nind = demography[0].size;
+    pop.init();
 
+    // Initialize all individuals for starting demography
     for (gen = 0; gen < gens; gen++) {
 	if (demography[period].time >= gen) {
 	    period++; // increment the demography
 	}
+	// get population size for tihs generation
+	popsize = demography[period].size;
+	pop.mate(popsize);
 
-	// do stuff for this generation:
+	// do other stuff for this generation:
 
 	// mutation TODO
 	
@@ -139,4 +229,7 @@ function DiploidWrightFisher(demography, linkage) {
 }
 
 // tests
-a = Population(100, 100, gameticEquilibriumLinkage(100))
+a = Population(100, constantLinkage(100, 0.01))
+a.init(30)
+
+
