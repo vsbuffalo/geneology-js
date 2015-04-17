@@ -57,6 +57,10 @@ function Geneology(pop) {
 	}
 	return edges;
     };
+
+    function freqs(locus) {
+	//TODO
+    };
     return {pop: pop,
 	    size: size,
 	    edges: edges,
@@ -79,8 +83,11 @@ var mutater = bernMutater(0.01);
 var pop = Population(100, constantLinkage(100, 0.01), mutater);
 
 var dem = Demography().popSizeChangeEvent(20, 10)
-	.popSizeChangeEvent(4, 10)
-	.popSizeChangeEvent(10, 16);
+	.popSizeChangeEvent(4, 4)
+	.popSizeChangeEvent(14, 4)
+	.popSizeChangeEvent(18, 4)
+	.popSizeChangeEvent(8, 7)
+	.popSizeChangeEvent(12, 10);
 //dem = Demography().popSizeChangeEvent(7, 10);
 
 // side effects: sim (may change) TODO
@@ -90,7 +97,7 @@ var g = Geneology(pop);
 
 // viz
 var setup = svgSimSetup(wf.max_size, wf.gens);
-var margin = {top: 40, right: 120, bottom: 20, left: 120},
+var margin = {top: 40, right: 10, bottom: 20, left: 10},
     width = setup.width - margin.right - margin.left,
     height = setup.height - margin.top - margin.bottom;
 
@@ -147,11 +154,15 @@ function alleleFiller(svg, col1, col2) {
     var grad_1 = defs.append("linearGradient").attr("id", "allele_1");
     grad_1.append("stop").style("stop-color", col2);
     var fill = ["allele_0", "allele_1"];
-    fill = fill.map(function(x) { return "fill:url(#" + x + ")"; });
+    fill = fill.map(function(x) { return "url(#" + x + ")"; });
     function fill_func(allele) {
 	return fill[allele];
     };
     return fill_func;
+}
+
+function alleleId(allele) {
+    return [allele.gen, allele.id, allele.is_mom, allele.allele].join("-");
 }
 
 var genotypeFill = genotypeFiller(svg, allele_colors[0], allele_colors[1]);
@@ -190,17 +201,24 @@ nodes.data(node_data).enter().append("g")
     .selectAll(".allele")
     .data(function(ind) {
 	var locus = 0;
-	var obj = [{id: ind.id, gen: ind.gen, is_mom: 1, allele: ind.loci[0][locus]},
- 		   {id: ind.id, gen: ind.gen, is_mom: 0, allele: ind.loci[1][locus]}];
+	var obj = [{id: ind.id, gen: ind.gen, is_mom: 1,
+		    children: ind.children,
+		    allele: ind.loci[0][locus]},
+ 		   {id: ind.id, gen: ind.gen, is_mom: 0,
+		    children: ind.children,
+		    allele: ind.loci[1][locus]}];
 	//debugger;
 	return obj;
     })
     .enter().append("circle")
+    .attr("id", alleleId)
     .attr("cx", function(x) { return alleleXPos(x.id, x.is_mom); })
     .attr("cy", function(x) { return indYPos(x.gen); }) 
     .attr("r", "4")
-    .attr("style", function(x) {
-	return alleleFill(x.allele) + ";";
+    //.attr("style", function(x) {return alleleFill(x.allele) + ";";});
+    .style({
+    	fill: function(x) {return alleleFill(x.allele);},
+     	"fill-opacity": function(x) {return [0.3, 1][Number(x.children.length > 0)];}
     });
 
 svg.selectAll(".link")
@@ -221,4 +239,6 @@ svg.selectAll(".link")
     .style("fill", "none")
     .style("stroke", "gray")
     .style("stroke-opacity", 0.4);
+
+
 	

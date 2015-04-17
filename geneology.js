@@ -284,8 +284,6 @@ function DiploidWrightFisher(pop, demography) {
 	pop.mate(popsize);
 
 	// do other stuff for this generation:
-
-	// mutation TODO
 	
 	// migration TODO
 

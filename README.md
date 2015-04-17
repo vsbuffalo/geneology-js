@@ -17,3 +17,6 @@ Some features don't have user interfaces, but can be enabled in code.
 - selection/fitness function
 - better PRNG
 - genealogies lineage highlighting
+- genotype, heterozygosity, and allele frequencies over time
+- compare distributions (may sim summary statistics)
+- pop splits and migration
