@@ -1,0 +1,9 @@
+
+body {
+    margin: 1em auto 4em auto;
+    color: #333;
+    width: 960px;
+}
+body > p {
+    width: 720px;
+}

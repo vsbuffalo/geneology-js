@@ -61,9 +61,10 @@ function Individual(mloci, ploci, id, mid, pid) {
     // Some checks
     if (ploci.length != mloci.length)
 	throw new Error("number of paternal loci different from maternal loci");
-    loci = [mloci, ploci]; // maternal and paternal loci
-    fitness = function() {};
-    meiosis = function(linkage) {
+    var loci = [mloci, ploci]; // maternal and paternal loci
+    var children = [];
+    function fitness() {};
+    function meiosis(linkage) {
 	isValidLinkage(ploci, linkage);
 	// make a single gamete
 	phase = [];
@@ -86,12 +87,18 @@ function Individual(mloci, ploci, id, mid, pid) {
 	}
 	return {phase: phase, gamete: gamete};
     };
+    function addChild(kid) {
+	children.push(kid.id);
+	return this;
+    };
     return {loci: loci,
 	    fitness: fitness,
 	    meiosis: meiosis,
 	    id: id,
 	    mid: mid,
-	    pid: pid};
+	    pid: pid,
+	    children: children,
+	    addChild: addChild};
 }
 
 function DemographicEvent(name, gens, size) {
@@ -157,11 +164,14 @@ function Population(nloci, linkage) {
 	    throw new Error("nind must be > 2");
 	initial_sfs = sfs(nind, nloci); // TODO resolution? multiply nind by 1000?
 	// initialize individuals
-	var first_gen = [], mom, pop;
+	// first invididual 'eve' is just place holder, the parent of all first gens
+	// makes drawing trees easier (since there's a root).
+	var first_gen = [], mom, dad, kid;
 	for (var i = 0; i < nind; i++) {
 	    mom = sample_sfs(initial_sfs, nloci);
-	    pop = sample_sfs(initial_sfs, nloci);
-	    first_gen.push(Individual(mom, pop, i, null, null));
+	    dad = sample_sfs(initial_sfs, nloci);
+	    kid = Individual(mom, dad, i, 0, 0);
+	    first_gen.push(kid);
 	}
 	individuals.push(first_gen);
 	return this;
@@ -176,14 +186,17 @@ function Population(nloci, linkage) {
 	return individuals[individuals.length-1][Dist.dunif(0, size-1)];
     }
     function mate(popsize) {
+	// TODO currently, there's selfing
 	// make the next generation
 	var new_gen = [];
 	for (var i = 0; i < popsize; i++) {
 	    var mom = random_individual();
-	    var pop = random_individual();
+	    var dad = random_individual();
 	    var kid = Individual(mom.meiosis(linkage).gamete,
-				 pop.meiosis(linkage).gamete,
-				 i, mom.id, pop.id);
+				 dad.meiosis(linkage).gamete,
+				 i, mom.id, dad.id);
+	    mom.addChild(kid);
+	    dad.addChild(kid);
 	    new_gen.push(kid);
 	}
 	if (new_gen.length > 0)
@@ -216,7 +229,8 @@ function DiploidWrightFisher(pop, demography) {
     dem_events = demography.events;
 
     // total simulation time is sum of all the demographic events.
-    var gens = dem_events.map(function(x) { return x.gens; });
+    var gens = dem_events.reduce(function(y, x) { return x.gens + y.gens; });
+    console.log(gens);
     var period = 0;
 
     // get first population size initialize population
@@ -224,9 +238,12 @@ function DiploidWrightFisher(pop, demography) {
     pop.init(init_nind);
 
     // Initialize all individuals for starting demography
+    var event_gen = 0;
     for (gen = 0; gen < gens; gen++) {
-	if (dem_events[period].time >= gen) {
+	if (dem_events[period].gens <= event_gen) {
+	    console.log("switch " + gen);
 	    period++; // increment the demography
+	    event_gen = 0;
 	}
 	// get population size for tihs generation
 	popsize = dem_events[period].size;
@@ -239,13 +256,7 @@ function DiploidWrightFisher(pop, demography) {
 	// migration TODO
 
 	// selection TOOD
+	event_gen += 1; // which generation we are in demographic event
     }
 }
 
-
-
-pop = Population(100, constantLinkage(100, 0.01))
-
-dem = Demography().popSizeChangeEvent(15, 10)
-
-wf = DiploidWrightFisher(pop, dem)
