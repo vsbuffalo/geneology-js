@@ -1,9 +1,10 @@
 // settings
-gen_x_buffer = 30; // multiplier (determines node horizontal spacing)
+gen_x_buffer = 40; // multiplier (determines node horizontal spacing)
 gen_y_buffer = 40; // multiplier (determines node vertical spacing)
 gen_x_margin = 10; // margin (horizontal margin between nodes)
 gen_y_margin = 10; // margin (vertical margin between nodes)
-allele_colors = ["#e31a1c", "#1f78b4"];
+allele_x_buff = 11;
+allele_colors = ["#d8b365", "#5ab4ac"];
 
 function Geneology(pop) {
     var _size;
@@ -13,6 +14,7 @@ function Geneology(pop) {
 	return this;
     };
     function nodes() {
+	// nodes based on individuals
 	// flatten the geneology into a single array, storing the generation
 	// with the individual
 	var flat = [], tmp;
@@ -41,9 +43,15 @@ function Geneology(pop) {
 	for (var gen = 1; gen < pop.gens(); gen++) {
 	    // skip first generation (no parents)
 	    pop.individuals[gen].forEach(function(ind) {
-		ind.children.forEach(function(kid) {
+		ind.children.forEach(function(kid, kid_i) {
 		    // TODO: beware fencepost error here?
-		    edges.push({gen:gen+1, id:ind.id, child: kid});
+		    var is_mom = ind.is_mom[kid_i];
+		    var kid_phase = pop.individuals[gen][ind.id].phases[is_mom];
+		    edges.push({gen:gen+1,
+				id:ind.id,
+				child: kid,
+				is_mom: is_mom,
+				child_phase: kid_phase});
 		});
 	    });
 	}
@@ -69,7 +77,7 @@ function svgSimSetup(max_size, gens) {
 // example sim
 var pop = Population(100, constantLinkage(100, 0.01));
 
-var dem = Demography().popSizeChangeEvent(24, 10).popSizeChangeEvent(10, 30);
+var dem = Demography().popSizeChangeEvent(20, 10).popSizeChangeEvent(10, 30);
 //dem = Demography().popSizeChangeEvent(7, 10);
 
 // side effects: sim (may change) TODO
@@ -98,12 +106,18 @@ function indYPos(gen) {
     return gen * gen_y_buffer + gen_y_margin; 
 };
 
+function alleleXPos(id, haplo) {
+    // haplo is an offset, [is_mom, kidphase]
+    var offset = haplo == undefined ? 0 : haplo;
+    return id * gen_x_buffer + haplo*allele_x_buff + gen_x_margin; 
+};
+
 var node_data = g.nodes();
 // node_data = [
 //     {id: 1, mid: 1, pid: 4, children: [4]}
 // ];
 
-function alleleFiller(svg, col1, col2) {
+function genotypeFiller(svg, col1, col2) {
     // append allele color scheme to svg, return func to make colors
     var defs = svg.append("defs");
     var grad_01 = defs.append("linearGradient").attr("id", "allele_01");
@@ -123,15 +137,81 @@ function alleleFiller(svg, col1, col2) {
     return fill_func;
 }
 
+function alleleFiller(svg, col1, col2) {
+    var defs = svg.append("defs");
+    var grad_0 = defs.append("linearGradient").attr("id", "allele_0");
+    grad_0.append("stop").style("stop-color", col1);
+    var grad_1 = defs.append("linearGradient").attr("id", "allele_1");
+    grad_1.append("stop").style("stop-color", col2);
+    var fill = ["allele_0", "allele_1"];
+    fill = fill.map(function(x) { return "fill:url(#" + x + ")"; });
+    function fill_func(allele) {
+	return fill[allele];
+    };
+    return fill_func;
+}
+
+var genotypeFill = genotypeFiller(svg, allele_colors[0], allele_colors[1]);
 var alleleFill = alleleFiller(svg, allele_colors[0], allele_colors[1]);
 
 var edge_data = g.edges();
 // edge_data = [];
 
-nodes.data(edge_data).enter().append("line")
+// === Individual nodes
+// nodes.data(edge_data).enter().append("line")
+//     .attr({
+// 	x1: function(n) { return indXPos(n.id); },
+// 	x2: function(n) { return indXPos(n.child); },
+// 	y1: function(n) { return indYPos(n.gen-1); },
+// 	y2: function(n) { return indYPos(n.gen); }
+//     })
+//     .style("fill", "none")
+//     .style("stroke", "gray")
+//     .style("stroke-opacity", 0.4);
+	
+// nodes.data(node_data).enter().append("circle")
+//     .attr("id", function(x) { return x.gen + "-" + x.id; })
+//     .attr("cx", function(x) { return indXPos(x.id); })
+//     .attr("cy", function(x) { return indYPos(x.gen); }) 
+//     .attr("r", "5")
+//     //.attr("style", "fill:steelblue;");
+//     .attr("style", function(x) {
+// 	return alleleFill(x.loci[0][0], x.loci[1][0]) + ";" +
+// 	    // TODO broken:
+// 	    "fill-opacity:"+[0.3, 1][Number(x.children.length > 0)] + ";";
+//     });
+
+// === Allele nodes
+
+nodes.data(node_data).enter().append("g")
+    .selectAll(".allele")
+    .data(function(ind) {
+	var locus = 0;
+	var obj = [{id: ind.id, gen: ind.gen, is_mom: 1, allele: ind.loci[0][locus]},
+ 		   {id: ind.id, gen: ind.gen, is_mom: 0, allele: ind.loci[1][locus]}];
+	//debugger;
+	return obj;
+    })
+    .enter().append("circle")
+    .attr("cx", function(x) { return alleleXPos(x.id, x.is_mom); })
+    .attr("cy", function(x) { return indYPos(x.gen); }) 
+    .attr("r", "4")
+    .attr("style", function(x) {
+	return alleleFill(x.allele) + ";";
+    });
+
+svg.selectAll(".link")
+    .data(edge_data)
+    .enter().append("line")
     .attr({
-	x1: function(n) { return indXPos(n.id); },
-	x2: function(n) { return indXPos(n.child); },
+	x1: function(n) {
+	    var locus = 0;
+	    // TODO: need to invert phase here -- why?
+	    return alleleXPos(n.id, Number(!n.child_phase[locus]));
+	},
+	x2: function(n) {
+	    return alleleXPos(n.child, n.is_mom);
+	},
 	y1: function(n) { return indYPos(n.gen-1); },
 	y2: function(n) { return indYPos(n.gen); }
     })
@@ -139,20 +219,3 @@ nodes.data(edge_data).enter().append("line")
     .style("stroke", "gray")
     .style("stroke-opacity", 0.4);
 	
-nodes.data(node_data).enter().append("circle")
-    .attr("id", function(x) { return x.gen + "-" + x.id; })
-    .attr("cx", function(x) { return indXPos(x.id); })
-    .attr("cy", function(x) { return indYPos(x.gen); }) 
-    .attr("r", "5")
-    //.attr("style", "fill:steelblue;");
-    .attr("style", function(x) {
-	return alleleFill(x.loci[0][0], x.loci[1][0]) + ";" +
-	    // TODO broken:
-	    "fill-opacity:"+[0.3, 1][Number(x.children.length > 0)] + ";";
-    });
-
-d3.selectAll("circle").on('mouseover', function(d) {
-    console.log(this);
-    var node = d3.select(this);
-    node.attr("r", 6);
-}); 

@@ -1,5 +1,7 @@
-EPS = 0.000001
+EPS = 0.000001;
 // simple sampling distributions
+
+// TODO: Individual shouldn't have loci/phase unpacked in constructor
 
 var Dist = (function(unif) {
     // discrete uniform
@@ -57,12 +59,13 @@ function isValidLinkage(loci, linkage) {
 			+ loci.length + "; linkage: " + linkage.length + ")");
 }
 
-function Individual(mloci, ploci, id, mid, pid) {
+function Individual(mloci, ploci, id, mid, pid, mphase, pphase) {
     // Some checks
     if (ploci.length != mloci.length)
 	throw new Error("number of paternal loci different from maternal loci");
     var loci = [mloci, ploci]; // maternal and paternal loci
-    var children = [];
+    var phases = [mphase, pphase];
+    var children = [], is_mom = [];
     function fitness() {};
     function meiosis(linkage) {
 	isValidLinkage(ploci, linkage);
@@ -87,8 +90,9 @@ function Individual(mloci, ploci, id, mid, pid) {
 	}
 	return {phase: phase, gamete: gamete};
     };
-    function addChild(kid) {
+    function addChild(kid, is_mom) {
 	children.push(kid.id);
+	this.is_mom.push(Number(is_mom));
 	return this;
     };
     return {loci: loci,
@@ -97,7 +101,9 @@ function Individual(mloci, ploci, id, mid, pid) {
 	    id: id,
 	    mid: mid,
 	    pid: pid,
+	    phases: phases,
 	    children: children,
+	    is_mom: is_mom,
 	    addChild: addChild};
 }
 
@@ -126,7 +132,7 @@ function sample(x, n, probs) {
     if (x.length != probs.length) throw new Error("length of x must be length of probs");
     var psum = probs.reduce(function(y, x) { return x + y; });
     if (Math.abs(psum - 1) > EPS) throw new Error("probs must sum to 1 +/- " + EPS + " (sum " + psum + " )");
-    var u = Array.apply(null, new Array(n)).map(function(x) { return Math.random(); })
+    var u = Array.apply(null, new Array(n)).map(function(x) { return Math.random(); });
     var inverse = function(prob) { // inverse mapping
 	var i = 0, sum = 0;
 	while (sum <= prob) {
@@ -134,7 +140,7 @@ function sample(x, n, probs) {
 	    i += 1;
 	}
 	return x[i-1];
-    }
+    };
     // do sampling
     var out = u.map(inverse);
     return out;
@@ -143,7 +149,7 @@ function sample(x, n, probs) {
 function constantLinkage(nloci, r) {
     // no linkage, assume gamete phase equilibrium
     return Array.apply(null, new Array(nloci-1))
-	.map(function(x) { return r; })
+	.map(function(x) { return r; });
 }
 
 function sample_sfs(sfs, nloci) {
@@ -166,11 +172,13 @@ function Population(nloci, linkage) {
 	// initialize individuals
 	// first invididual 'eve' is just place holder, the parent of all first gens
 	// makes drawing trees easier (since there's a root).
-	var first_gen = [], mom, dad, kid;
+	var first_gen = [], mom, dad, kid, mom_phase, dad_phase;
 	for (var i = 0; i < nind; i++) {
 	    mom = sample_sfs(initial_sfs, nloci);
 	    dad = sample_sfs(initial_sfs, nloci);
-	    kid = Individual(mom, dad, i, 0, 0);
+	    mom_phase = Array.apply(null, new Array(nloci)).map(function(){return 1;});
+	    dad_phase = Array.apply(null, new Array(nloci)).map(function(){return 0;});
+	    kid = Individual(mom, dad, i, 0, 0, mom_phase, dad_phase);
 	    first_gen.push(kid);
 	}
 	individuals.push(first_gen);
@@ -200,11 +208,15 @@ function Population(nloci, linkage) {
 	    var mom = random_individual();
 	    var except = typeof selfing == undefined || !selfing ? mom.id : undefined;
 	    var dad = random_individual(mom.id);
-	    var kid = Individual(mom.meiosis(linkage).gamete,
-				 dad.meiosis(linkage).gamete,
-				 i, mom.id, dad.id);
-	    mom.addChild(kid);
-	    dad.addChild(kid);
+	    var mom_gamete = mom.meiosis(linkage),
+		dad_gamete = dad.meiosis(linkage);
+	    var kid = Individual(mom_gamete.gamete,
+				 dad_gamete.gamete,
+				 i, mom.id, dad.id,
+				 mom_gamete.phase,
+				 dad_gamete.phase);
+	    mom.addChild(kid, true);
+	    dad.addChild(kid, false);
 	    new_gen.push(kid);
 	}
 	if (new_gen.length > 0)
