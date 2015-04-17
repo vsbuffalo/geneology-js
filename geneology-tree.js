@@ -75,9 +75,12 @@ function svgSimSetup(max_size, gens) {
 }
 
 // example sim
-var pop = Population(100, constantLinkage(100, 0.01));
+var mutater = bernMutater(0.01);
+var pop = Population(100, constantLinkage(100, 0.01), mutater);
 
-var dem = Demography().popSizeChangeEvent(20, 10).popSizeChangeEvent(10, 30);
+var dem = Demography().popSizeChangeEvent(20, 10)
+	.popSizeChangeEvent(4, 10)
+	.popSizeChangeEvent(10, 16);
 //dem = Demography().popSizeChangeEvent(7, 10);
 
 // side effects: sim (may change) TODO

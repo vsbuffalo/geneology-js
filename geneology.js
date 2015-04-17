@@ -158,13 +158,14 @@ function sample_sfs(sfs, nloci) {
 	map(function(freq) {return Number(Dist.bern(freq));});
 }
  
-function Population(nloci, linkage) {
+function Population(nloci, linkage, mutate) {
     // used to store pop state through simulation for later reference
     // Should contain subpopulations/demes
     var individuals = [];
     var demes = {}; // TODO
     var history = [];
     var initial_sfs;
+    var mutate = mutate;
     function init(nind) {
 	if (nind == undefined || nind < 2)
 	    throw new Error("nind must be > 2");
@@ -210,6 +211,8 @@ function Population(nloci, linkage) {
 	    var dad = random_individual(mom.id);
 	    var mom_gamete = mom.meiosis(linkage),
 		dad_gamete = dad.meiosis(linkage);
+	    mom_gamete.gamete = mutate(mom_gamete.gamete);
+	    dad_gamete.gamete = mutate(dad_gamete.gamete);
 	    var kid = Individual(mom_gamete.gamete,
 				 dad_gamete.gamete,
 				 i, mom.id, dad.id,
@@ -230,6 +233,7 @@ function Population(nloci, linkage) {
 	    random_individual: random_individual,
 	    mate: mate,
 	    gens: gens,
+	    mutate: mutate,
 	    last_gen: last_gen,
 	    individuals: individuals,
 	    initial_sfs: initial_sfs};
@@ -244,12 +248,23 @@ function Demography() {
     return {events: events, popSizeChangeEvent: popSizeChangeEvent};
 }
 
+function bernMutater(prob) {
+    function mutater(gamete) {
+	return gamete.map(function(a) {
+	    var mutate = Dist.bern(prob);
+	    if (!mutate) return a;
+	    return a == 0 ? 1 : 0;
+	});
+    };
+    return mutater;
+}
+
 function DiploidWrightFisher(pop, demography) {
     // Push all populations through demography, each pop is a simulation.
     dem_events = demography.events;
 
     // total simulation time is sum of all the demographic events.
-    var gens = dem_events.reduce(function(y, x) { return x.gens + y.gens; });
+    var gens = d3.sum(dem_events.map(function(x) { return x.gens; }));
     var max_size = Math.max.apply(null, dem_events.map(function(x) {return x.size;}));
     var period = 0;
 
