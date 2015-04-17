@@ -180,18 +180,26 @@ function Population(nloci, linkage) {
 	// return the last generation
 	return individuals[individuals.length-1];
     }
-    function random_individual() {
+    function random_individual(except) {
 	// sample a random individual from the last generation
-	size = individuals[individuals.length-1].length;
-	return individuals[individuals.length-1][Dist.dunif(0, size-1)];
+	// ignore is an individual to ignore (e.g. the current individual)
+	var max = individuals[individuals.length-1].length - 1;
+	var sample_space = individuals[individuals.length-1];
+	if (typeof except != undefined) {
+	    sample_space = sample_space.filter(function(x) {
+		return x.id != except;
+	    });
+	    max--;
+	}
+	return sample_space[Dist.dunif(0, max)];
     }
-    function mate(popsize) {
-	// TODO currently, there's selfing
+    function mate(popsize, selfing) {
 	// make the next generation
 	var new_gen = [];
 	for (var i = 0; i < popsize; i++) {
 	    var mom = random_individual();
-	    var dad = random_individual();
+	    var except = typeof selfing == undefined || !selfing ? mom.id : undefined;
+	    var dad = random_individual(mom.id);
 	    var kid = Individual(mom.meiosis(linkage).gamete,
 				 dad.meiosis(linkage).gamete,
 				 i, mom.id, dad.id);
@@ -230,7 +238,7 @@ function DiploidWrightFisher(pop, demography) {
 
     // total simulation time is sum of all the demographic events.
     var gens = dem_events.reduce(function(y, x) { return x.gens + y.gens; });
-    console.log(gens);
+    var max_size = Math.max.apply(null, dem_events.map(function(x) {return x.size;}));
     var period = 0;
 
     // get first population size initialize population
@@ -241,7 +249,6 @@ function DiploidWrightFisher(pop, demography) {
     var event_gen = 0;
     for (gen = 0; gen < gens; gen++) {
 	if (dem_events[period].gens <= event_gen) {
-	    console.log("switch " + gen);
 	    period++; // increment the demography
 	    event_gen = 0;
 	}
@@ -258,5 +265,6 @@ function DiploidWrightFisher(pop, demography) {
 	// selection TOOD
 	event_gen += 1; // which generation we are in demographic event
     }
+    return {pop: pop, gens: gens, max_size: max_size};
 }
 

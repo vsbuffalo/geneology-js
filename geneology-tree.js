@@ -1,3 +1,9 @@
+// settings
+gen_x_buffer = 30; // multiplier (determines node horizontal spacing)
+gen_y_buffer = 40; // multiplier (determines node vertical spacing)
+gen_x_margin = 10; // margin (horizontal margin between nodes)
+gen_y_margin = 10; // margin (vertical margin between nodes)
+allele_colors = ["#e31a1c", "#1f78b4"];
 
 function Geneology(pop) {
     var _size;
@@ -24,13 +30,20 @@ function Geneology(pop) {
 	}
 	return flat;
     };
+    function backtrace(ind) {
+
+    };
+    function forwardtrace(ind) {
+
+    };
     function edges() {
 	var edges = [];
-	for (var gen = 2; gen < pop.gens(); gen++) {
+	for (var gen = 1; gen < pop.gens(); gen++) {
 	    // skip first generation (no parents)
 	    pop.individuals[gen].forEach(function(ind) {
 		ind.children.forEach(function(kid) {
-		    edges.push({gen:gen, id:ind.id, child: kid});
+		    // TODO: beware fencepost error here?
+		    edges.push({gen:gen+1, id:ind.id, child: kid});
 		});
 	    });
 	}
@@ -39,25 +52,36 @@ function Geneology(pop) {
     return {pop: pop,
 	    size: size,
 	    edges: edges,
-	    nodes: nodes};
+	    nodes: nodes,
+	    forwardtrace: forwardtrace,
+	    backtrace: backtrace};
 	    
 }
 
-// example sim
-pop = Population(100, constantLinkage(100, 0.01));
+function svgSimSetup(max_size, gens) {
+    // take a wright fisher sim and produce width/height
+    return {
+	width: indXPos(max_size) + gen_x_margin*2,
+	height: indYPos(gens) + gen_y_margin*2
+    };
+}
 
-dem = Demography().popSizeChangeEvent(15, 10).popSizeChangeEvent(20, 10);
+// example sim
+var pop = Population(100, constantLinkage(100, 0.01));
+
+var dem = Demography().popSizeChangeEvent(24, 10).popSizeChangeEvent(10, 30);
 //dem = Demography().popSizeChangeEvent(7, 10);
 
 // side effects: sim (may change) TODO
-DiploidWrightFisher(pop, dem); // runs pop through demography
+var wf = DiploidWrightFisher(pop, dem); // runs pop through demography
 
 var g = Geneology(pop);
 
 // viz
+var setup = svgSimSetup(wf.max_size, wf.gens);
 var margin = {top: 40, right: 120, bottom: 20, left: 120},
-    width = 2000 - margin.right - margin.left,
-    height = 1900 - margin.top - margin.bottom;
+    width = setup.width - margin.right - margin.left,
+    height = setup.height - margin.top - margin.bottom;
 
 var svg = d3.select("body").append("svg")
 	.attr("width", width + margin.right + margin.left)
@@ -66,14 +90,12 @@ var svg = d3.select("body").append("svg")
 // build the tree
 var nodes = svg.selectAll("circle");
 
-// TODO write node to position function
-
 function indXPos(id) {
-    return id * 30 + 10; 
+    return id * gen_x_buffer + gen_x_margin; 
 };
 
 function indYPos(gen) {
-    return gen * 50 + 10; 
+    return gen * gen_y_buffer + gen_y_margin; 
 };
 
 var node_data = g.nodes();
@@ -101,16 +123,7 @@ function alleleFiller(svg, col1, col2) {
     return fill_func;
 }
 
-var alleleFill = alleleFiller(svg, "#d7191c", "#2c7bb6");
-
-nodes.data(node_data).enter().append("circle")
-    .attr("cx", function(x) { return indXPos(x.id); })
-    .attr("cy", function(x) { return indYPos(x.gen); }) 
-    .attr("r", "5")
-    //.attr("style", "fill:steelblue;");
-    .attr("style", function(x) {
-	return alleleFill(x.loci[0][0], x.loci[1][0]) + ";";
-    });
+var alleleFill = alleleFiller(svg, allele_colors[0], allele_colors[1]);
 
 var edge_data = g.edges();
 // edge_data = [];
@@ -124,10 +137,22 @@ nodes.data(edge_data).enter().append("line")
     })
     .style("fill", "none")
     .style("stroke", "gray")
-    .style("stroke-opacity", 0.6);
+    .style("stroke-opacity", 0.4);
 	
+nodes.data(node_data).enter().append("circle")
+    .attr("id", function(x) { return x.gen + "-" + x.id; })
+    .attr("cx", function(x) { return indXPos(x.id); })
+    .attr("cy", function(x) { return indYPos(x.gen); }) 
+    .attr("r", "5")
+    //.attr("style", "fill:steelblue;");
+    .attr("style", function(x) {
+	return alleleFill(x.loci[0][0], x.loci[1][0]) + ";" +
+	    // TODO broken:
+	    "fill-opacity:"+[0.3, 1][Number(x.children.length > 0)] + ";";
+    });
 
-
-
-
-
+d3.selectAll("circle").on('mouseover', function(d) {
+    console.log(this);
+    var node = d3.select(this);
+    node.attr("r", 6);
+}); 
